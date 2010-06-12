@@ -44,7 +44,12 @@ post '/eval' => sub {
     $sid = $sid->value if defined $sid;
     my($out, $err, $ret) = safe_eval($self->param('code'), $sid);
 
-    $self->render_text($out, $err, Dumper($ret));
+    $self->render_text($out) if $out;
+    if($err) {
+        $err = prepare_error_text($err);
+        $self->render_text($out ? "Warning: $err" : "Error: $err")
+    }
+    $self->render_text(Dumper($ret));
 };
 
 app->start;
@@ -86,6 +91,15 @@ sub prepare_code {
     $saved .= $code;
 
     qq!sub { $saved }!;
+}
+
+sub prepare_error_text {
+    my $text = shift;
+
+    given($text) {
+        when(/\btrapped\b/) { return 'Operation not permitted' }
+        default             { $text }
+    }
 }
 
 __DATA__
