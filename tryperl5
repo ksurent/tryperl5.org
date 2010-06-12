@@ -7,7 +7,7 @@ use Mojolicious::Lite;
 use Lexical::Persistence;
 use IO::CaptureOutput qw(capture);
 
-my $persist = Lexical::Persistence->new;
+my %persist;
 
 my $safe = Safe->new;
 $safe->permit_only(qw(
@@ -20,12 +20,29 @@ $safe->permit_only(qw(
     print
 ));
 
-get '/' => 'index';
+get '/' => sub {
+    my $self = shift;
+
+    my $sid = $self->req->cookie('sid');
+    $sid = $sid->value if defined $sid;
+    if(not defined $sid or not exists $persist{$sid}) {
+        $sid = rand;
+        $self->res->cookies(
+            Mojo::Cookie::Response->new(
+                name  => 'sid',
+                value => $sid,
+            )
+        );
+        $persist{$sid} = Lexical::Persistence->new;
+    }
+} => 'index';
 
 post '/eval' => sub {
     my $self = shift;
 
-    my($out, $err, $ret) = safe_eval($self->param('code'));
+    my $sid = $self->req->cookie('sid');
+    $sid = $sid->value if defined $sid;
+    my($out, $err, $ret) = safe_eval($self->param('code'), $sid);
 
     $self->render_text($out, $err, Dumper($ret));
 };
@@ -33,9 +50,9 @@ post '/eval' => sub {
 app->start;
 
 sub safe_eval {
-    my $code = shift;
+    my($code, $sid) = @_;
 
-    my($out, $err, $ret) = execute(compile($code));
+    my($out, $err, $ret) = execute(compile($code, $sid),  $sid);
 
     # TODO
 
@@ -43,14 +60,12 @@ sub safe_eval {
 }
 
 sub compile {
-    my $code = shift;
-
-    my $compiled = $safe->reval(prepare_code($code));
+    my $compiled = $safe->reval(prepare_code(@_));
     return $compiled ? $compiled : $@;
 }
 
 sub execute {
-    my $compiled = shift;
+    my($compiled, $sid) = @_;
 
     my(@ret, $stdout, $stderr);
     unless(ref $compiled) {
@@ -58,16 +73,16 @@ sub execute {
         return ($stdout, $stderr, \@ret);
     }
 
-    my $persisted = $persist->wrap($compiled);
+    my $persisted = $persist{$sid}->wrap($compiled);
     capture { @ret = eval { $persisted->() } } \$stdout, \$stderr;
 
     ($stdout, $stderr, \@ret);
 }
 
 sub prepare_code {
-    my $code = shift;
+    my($code, $sid) = @_;
 
-    my $saved = join '', map { "my $_;" } keys %{ $persist->get_context('_') };
+    my $saved = join '', map { "my $_;" } keys %{ $persist{$sid}->get_context('_') };
     $saved .= $code;
 
     qq!sub { $saved }!;
