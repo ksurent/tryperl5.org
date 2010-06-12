@@ -1,0 +1,113 @@
+#!/usr/bin/env perl
+
+use Safe;
+use Modern::Perl;
+use Data::Dumper;
+use Mojolicious::Lite;
+use Lexical::Persistence;
+use IO::CaptureOutput qw(capture);
+
+my $persist = Lexical::Persistence->new;
+
+my $safe = Safe->new;
+$safe->permit_only(qw(
+    :base_core
+    :base_mem
+    :base_loop
+    :base_math
+    :base_orig
+    say
+    print
+));
+
+get '/' => 'index';
+
+post '/eval' => sub {
+    my $self = shift;
+
+    my($out, $err, $ret) = safe_eval($self->param('code'));
+
+    $self->render_text($out, $err, Dumper($ret));
+};
+
+app->start;
+
+sub safe_eval {
+    my $code = shift;
+
+    my($out, $err, $ret) = execute(compile($code));
+
+    # TODO
+
+    ($out, $err, $ret);
+}
+
+sub compile {
+    my $code = shift;
+
+    my $compiled = $safe->reval(prepare_code($code));
+    return $compiled ? $compiled : $@;
+}
+
+sub execute {
+    my $compiled = shift;
+
+    my(@ret, $stdout, $stderr);
+    unless(ref $compiled) {
+        $stderr .= $compiled;
+        return ($stdout, $stderr, \@ret);
+    }
+
+    my $persisted = $persist->wrap($compiled);
+    capture { @ret = eval { $persisted->() } } \$stdout, \$stderr;
+
+    ($stdout, $stderr, \@ret);
+}
+
+sub prepare_code {
+    my $code = shift;
+
+    my $saved = join '', map { "my $_;" } keys %{ $persist->get_context('_') };
+    $saved .= $code;
+
+    qq!sub { $saved }!;
+}
+
+__DATA__
+
+@@ index.html.ep
+% layout 'default';
+<input type="text" name="code" id="code"/>
+<input type="submit" id="submit"/>
+<div id="result"></div>
+
+@@ layouts/default.html.ep
+<!doctype html>
+<html>
+    <head>
+        <title>Try Perl 5! An interactive tutorial in your browser</title>
+        <script src="http://code.jquery.com/jquery-1.4.2.min.js" type="text/javascript"></script>
+        <script type="text/javascript">
+            $(document).ready(
+                function() {
+                    $('#submit').click(
+                        function() {
+                            $.post(
+                                '/eval',
+                                {
+                                    code: $('#code').val(),
+                                },
+                                function(data) {
+                                    $('#result').html(data);
+                                }
+                            )
+                        }
+                    )
+                }
+            );
+        </script>
+    </head>
+    <body>
+        <%== content %>
+    </body>
+</html>
