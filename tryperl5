@@ -57,9 +57,10 @@ app->start;
 sub safe_eval {
     my($code, $sid) = @_;
 
-    my($out, $err, $ret) = execute(compile($code, $sid),  $sid);
-
-    # TODO
+    local $SIG{ALRM} = sub { die 'Operation timed out' };
+    alarm(3);
+    my ($out, $err, $ret)= execute(compile($code, $sid),  $sid);
+    alarm(0);
 
     ($out, $err, $ret);
 }
@@ -74,7 +75,7 @@ sub execute {
 
     my(@ret, $stdout, $stderr);
     unless(ref $compiled) {
-        $stderr .= $compiled;
+        $stderr = $compiled;
         return ($stdout, $stderr, \@ret);
     }
 
