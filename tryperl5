@@ -8,8 +8,9 @@ use Mojolicious::Lite;
 use Lexical::Persistence;
 use IO::CaptureOutput qw(capture);
 
-my %persist;
+$Data::Dumper::Indent = 0;
 
+my %persist;
 my $safe = Safe->new;
 $safe->permit_only(qw(
     :base_core
@@ -38,6 +39,7 @@ get '/' => sub {
         );
         $persist{$sid} = Lexical::Persistence->new;
     }
+    $self->stash(perl_version => sub { chomp(my @v = `$^X -v`); $v[1]; }->());
 } => 'index';
 
 post '/eval' => sub {
@@ -50,13 +52,20 @@ post '/eval' => sub {
     }
 
     my($out, $err, $ret) = safe_eval($self->param('code'), $sid->value);
+    $ret = Data::Dumper->new([$ret], ['RETURN_VALUE'])->Dump;
     $self->render_json({
         stdout  => $out,
         stderr  => $err,
-        retcode => Dumper($ret),
+        retval  => $ret,
     });
 };
 
+app->static(
+    MojoX::Dispatcher::Static->new(
+        prefix => '/js',
+        root   => '/home/ksurent/tryperl5.org/jquery-console',
+    )
+);
 app->start;
 
 sub safe_eval {
@@ -64,14 +73,14 @@ sub safe_eval {
 
     local $SIG{ALRM} = sub { die 'Operation timed out' };
     alarm(3);
-    my ($out, $err, $ret)= execute(compile($code, $sid),  $sid);
+    my($out, $err, $ret) = execute(compile($code, $sid),  $sid);
     alarm(0);
 
     ($out, $err, $ret);
 }
 
 sub compile {
-    my $compiled = $safe->reval(prepare_code(@_));
+    my $compiled = $safe->reval(prepare_code(@_), 1);
     return $compiled ? $compiled : $@;
 }
 
@@ -100,41 +109,56 @@ sub prepare_code {
 }
 
 __DATA__
-
 @@ index.html.ep
-% layout 'default';
-<input type="text" name="code" id="code"/>
-<input type="submit" id="submit"/>
-<div id="result"></div>
-
-@@ layouts/default.html.ep
 <!doctype html>
 <html>
     <head>
         <title>Try Perl 5! An interactive tutorial in your browser</title>
-        <script src="http://code.jquery.com/jquery-1.4.2.min.js" type="text/javascript"></script>
+        <script src="/js/jquery-1.4.2.min.js" type="text/javascript"></script>
+        <script src="/js/jquery.console.js" type="text/javascript"></script>
         <script type="text/javascript">
-            $(document).ready(
-                function() {
-                    $('#submit').click(
-                        function() {
-                            $.post(
-                                '/eval',
-                                {
-                                    code: $('#code').val(),
-                                },
-                                function(data) {
-                                    $('#result').html('Out: ' + data.stdout + "<br/>Error: " + data.stderr + "<br/>Returned: " + data.retcode);
-                                },
-                                'json'
-                            )
-                        }
-                    )
-                }
-            );
+            $(document).ready( function() {
+                var console = $('<div class="console"/>');
+                $('body').append(console);
+                console.console({
+                    autofocus: true,
+                    promptHistory: true,
+                    promtLabel: '> ',
+                    welcomeMessage: '<%= $perl_version  %>',
+                    commandValidate: function(line) {
+                        if(line == '') return false;
+                        else return true;
+                    },
+                    commandHandle: function(line) {
+                        var data;
+                        $.post(
+                            '/eval',
+                            { code: line },
+                            function(res) {
+                                data = [
+                                    { msg: res.stdout, className: 'stdout' },
+                                    { msg: res.stderr, className: 'stderr' },
+                                    { msg: res.retval, className: 'retval' }
+                                ];
+                            },
+                            'json'
+                        );
+                        return data;
+                    }
+                });
+            });
         </script>
+        <style type="text/css">
+              div.console { font-size: 14px; }
+              div.console div.jquery-console-inner { width:900px; height:200px; background:#333; padding:0.5em; overflow:auto; }
+              div.console div.jquery-console-prompt-box { color:#fff; font-family:monospace; }
+              div.console div.jquery-console-focus span.jquery-console-cursor { background:#fefefe; color:#333; font-weight:bold; }
+              div.console div.stderr { color:#ef0505; font-family:monospace; padding:0.1em; }
+              div.console div.stdout { color:#1ad027; font-family:monospace; padding:0.1em; }
+              div.console div.retval { color:#52666f; font-family:monospace; padding:0.1em; }
+              div.console span.jquery-console-prompt-label { font-weight:bold; }
+              div.console div.jquery-console-welcome { color: #fff; }
+        </style>
     </head>
-    <body>
-        <%== content %>
-    </body>
+    <body></body>
 </html>
