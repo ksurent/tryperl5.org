@@ -1,6 +1,7 @@
 #!/usr/bin/env perl
 
 use Safe;
+use UUID::Tiny;
 use Modern::Perl;
 use Data::Dumper;
 use Mojolicious::Lite;
@@ -26,11 +27,13 @@ get '/' => sub {
     my $sid = $self->req->cookie('sid');
     $sid = $sid->value if defined $sid;
     if(not defined $sid or not exists $persist{$sid}) {
-        $sid = rand;
+        $sid = create_UUID_as_string(UUID_V4);
         $self->res->cookies(
             Mojo::Cookie::Response->new(
-                name  => 'sid',
-                value => $sid,
+                name   => 'sid',
+                value  => $sid,
+                domain => 'tryperl5.org',
+                path   => '/',
             )
         );
         $persist{$sid} = Lexical::Persistence->new;
@@ -41,15 +44,17 @@ post '/eval' => sub {
     my $self = shift;
 
     my $sid = $self->req->cookie('sid');
-    $sid = $sid->value if defined $sid;
-    my($out, $err, $ret) = safe_eval($self->param('code'), $sid);
-
-    $self->render_text($out) if $out;
-    if($err) {
-        $err = prepare_error_text($err);
-        $self->render_text($out ? "Warning: $err" : "Error: $err")
+    unless(defined $sid) {
+        $self->render_json({});
+        return;
     }
-    $self->render_text(Dumper($ret));
+
+    my($out, $err, $ret) = safe_eval($self->param('code'), $sid->value);
+    $self->render_json({
+        stdout  => $out,
+        stderr  => $err,
+        retcode => Dumper($ret),
+    });
 };
 
 app->start;
@@ -94,15 +99,6 @@ sub prepare_code {
     qq!sub { $saved }!;
 }
 
-sub prepare_error_text {
-    my $text = shift;
-
-    given($text) {
-        when(/\btrapped\b/) { return 'Operation not permitted' }
-        default             { $text }
-    }
-}
-
 __DATA__
 
 @@ index.html.ep
@@ -128,8 +124,9 @@ __DATA__
                                     code: $('#code').val(),
                                 },
                                 function(data) {
-                                    $('#result').html(data);
-                                }
+                                    $('#result').html('Out: ' + data.stdout + "<br/>Error: " + data.stderr + "<br/>Returned: " + data.retcode);
+                                },
+                                'json'
                             )
                         }
                     )
