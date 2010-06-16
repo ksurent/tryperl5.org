@@ -63,7 +63,7 @@ post '/eval' => sub {
 app->static(
     MojoX::Dispatcher::Static->new(
         prefix => '/js',
-        root   => '/home/ksurent/tryperl5.org/jquery-console',
+        root   => app->home->rel_dir('jquery-console'),
     )
 );
 app->start;
