@@ -53,6 +53,7 @@ post '/eval' => sub {
 
     my($out, $err, $ret) = safe_eval($self->param('code'), $sid->value);
     $ret = Data::Dumper->new([$ret], ['RETURN_VALUE'])->Dump;
+    $err = prepare_error_text($err) if $err;
     $self->render_json({
         stdout  => $out,
         stderr  => $err,
@@ -106,6 +107,18 @@ sub prepare_code {
     $saved .= $code;
 
     qq!sub { $saved }!;
+}
+
+sub prepare_error_text {
+    my $text = shift;
+
+    for($text) {
+        s{ at \(eval \d+\) line \d+,?}{}g;
+        s{ <DATA> line \d+\.?}{}g;
+        s{trapped by operation mask}{call is not allowed}g;
+    }
+
+    $text;
 }
 
 __DATA__
