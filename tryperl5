@@ -131,18 +131,20 @@ __DATA__
                     },
                     commandHandle: function(line) {
                         var data;
-                        $.post(
-                            '/eval',
-                            { code: line },
-                            function(res) {
+                        $.ajax( {
+                            type: 'POST',
+                            url: '/eval',
+                            data: { code: line },
+                            dataType: 'json',
+                            async: false,
+                            success: function(res) {
                                 data = [
                                     { msg: res.stdout, className: 'stdout' },
                                     { msg: res.stderr, className: 'stderr' },
                                     { msg: res.retval, className: 'retval' }
                                 ];
-                            },
-                            'json'
-                        );
+                            }
+                        } );
                         return data;
                     }
                 });
