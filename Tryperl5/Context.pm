@@ -7,7 +7,7 @@ use Exporter qw(import);
 use Lexical::Persistence;
 use IO::CaptureOutput qw(capture);
 
-our @EXPORT = qw(add_context get_context safe_eval);
+our @EXPORT = qw(add_context get_context remove_context safe_eval);
 
 {
     no warnings 'redefine';
@@ -47,6 +47,12 @@ sub get_context {
     my $id = shift;
 
     $contexts{$id};
+}
+
+sub remove_context {
+    my $id = shift;
+
+    delete $contexts{$id};
 }
 
 sub safe_eval {

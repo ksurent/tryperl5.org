@@ -10,8 +10,9 @@ use Tryperl5::Context;
 get '/' => sub {
     my $self = shift;
 
-    if(not defined $self->session('cid')) {
-        my $cid = create_UUID_as_string(UUID_V4);
+    my $cid = $self->session('cid');
+    if(not defined get_context($cid)) {
+        $cid = create_UUID_as_string(UUID_V4);
         $self->session(cid => $cid);
         add_context($cid);
     }
@@ -32,6 +33,18 @@ post '/eval' => sub {
         stderr  => $err,
         retval  => $ret,
     });
+};
+
+get '/reset' => sub {
+    my $self = shift;
+
+    my $cid = $self->session('cid');
+    if(defined $cid) {
+        $self->session(cid => 0);
+        remove_context($cid);
+    }
+    
+    $self->redirect_to('index');
 };
 
 app->static(
@@ -104,5 +117,7 @@ __DATA__
               div.console div.jquery-console-welcome { color: #fff; }
         </style>
     </head>
-    <body></body>
+    <body>
+        <a href="/reset">Reset</a>
+    </body>
 </html>
