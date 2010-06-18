@@ -10,18 +10,9 @@ use Tryperl5::Context;
 get '/' => sub {
     my $self = shift;
 
-    my $cid = $self->req->cookie('cid');
-    $cid = $cid->value if defined $cid;
-    if(not defined $cid or not defined get_context($cid)) {
-        $cid = create_UUID_as_string(UUID_V4);
-        $self->res->cookies(
-            Mojo::Cookie::Response->new(
-                name   => 'cid',
-                value  => $cid,
-                domain => 'tryperl5.org',
-                path   => '/',
-            )
-        );
+    if(not defined $self->session('cid')) {
+        my $cid = create_UUID_as_string(UUID_V4);
+        $self->session(cid => $cid);
         add_context($cid);
     }
     $self->stash(perl_version => sub { chomp(my @v = `$^X -v`); $v[1]; }->());
@@ -30,13 +21,12 @@ get '/' => sub {
 post '/eval' => sub {
     my $self = shift;
 
-    my $cid = $self->req->cookie('cid');
+    my $cid = $self->session('cid');
     unless(defined $cid) {
-        $self->render_json({});
-        return;
+        return $self->render_json({});
     }
 
-    my($out, $err, $ret) = safe_eval($self->param('code'), $cid->value);
+    my($out, $err, $ret) = safe_eval($self->param('code'), $cid);
     $self->render_json({
         stdout  => $out,
         stderr  => $err,
@@ -50,6 +40,7 @@ app->static(
         root   => app->home->rel_dir('jquery-console'),
     )
 );
+app->secret('tryperl5 secret');
 app->start;
 
 __DATA__
