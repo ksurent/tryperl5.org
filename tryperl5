@@ -1,43 +1,28 @@
 #!/usr/bin/env perl
 
-use Safe;
 use UUID::Tiny;
 use Modern::Perl;
-use Data::Dumper;
 use Mojolicious::Lite;
-use Lexical::Persistence;
-use IO::CaptureOutput qw(capture);
 
-$Data::Dumper::Indent = 0;
-
-my %persist;
-my $safe = Safe->new;
-$safe->permit_only(qw(
-    :base_core
-    :base_mem
-    :base_loop
-    :base_math
-    :base_orig
-    say
-    print
-));
+use Tryperl5::Context;
+#use Tryperl5::Excersises;
 
 get '/' => sub {
     my $self = shift;
 
-    my $sid = $self->req->cookie('sid');
-    $sid = $sid->value if defined $sid;
-    if(not defined $sid or not exists $persist{$sid}) {
-        $sid = create_UUID_as_string(UUID_V4);
+    my $cid = $self->req->cookie('cid');
+    $cid = $cid->value if defined $cid;
+    if(not defined $cid or not defined get_context($cid)) {
+        $cid = create_UUID_as_string(UUID_V4);
         $self->res->cookies(
             Mojo::Cookie::Response->new(
-                name   => 'sid',
-                value  => $sid,
+                name   => 'cid',
+                value  => $cid,
                 domain => 'tryperl5.org',
                 path   => '/',
             )
         );
-        $persist{$sid} = Lexical::Persistence->new;
+        add_context($cid);
     }
     $self->stash(perl_version => sub { chomp(my @v = `$^X -v`); $v[1]; }->());
 } => 'index';
@@ -45,15 +30,13 @@ get '/' => sub {
 post '/eval' => sub {
     my $self = shift;
 
-    my $sid = $self->req->cookie('sid');
-    unless(defined $sid) {
+    my $cid = $self->req->cookie('cid');
+    unless(defined $cid) {
         $self->render_json({});
         return;
     }
 
-    my($out, $err, $ret) = safe_eval($self->param('code'), $sid->value);
-    $ret = Data::Dumper->new([$ret], ['RETURN_VALUE'])->Dump;
-    $err = prepare_error_text($err) if $err;
+    my($out, $err, $ret) = safe_eval($self->param('code'), $cid->value);
     $self->render_json({
         stdout  => $out,
         stderr  => $err,
@@ -68,58 +51,6 @@ app->static(
     )
 );
 app->start;
-
-sub safe_eval {
-    my($code, $sid) = @_;
-
-    local $SIG{ALRM} = sub { die 'Operation timed out' };
-    alarm(3);
-    my($out, $err, $ret) = execute(compile($code, $sid),  $sid);
-    alarm(0);
-
-    ($out, $err, $ret);
-}
-
-sub compile {
-    my $compiled = $safe->reval(prepare_code(@_), 1);
-    return $compiled ? $compiled : $@;
-}
-
-sub execute {
-    my($compiled, $sid) = @_;
-
-    my(@ret, $stdout, $stderr);
-    unless(ref $compiled) {
-        $stderr = $compiled;
-        return ($stdout, $stderr, \@ret);
-    }
-
-    my $persisted = $persist{$sid}->wrap($compiled);
-    capture { @ret = eval { $persisted->() } } \$stdout, \$stderr;
-
-    ($stdout, $stderr, \@ret);
-}
-
-sub prepare_code {
-    my($code, $sid) = @_;
-
-    my $saved = join '', map { "my $_;" } keys %{ $persist{$sid}->get_context('_') };
-    $saved .= $code;
-
-    qq!sub { $saved }!;
-}
-
-sub prepare_error_text {
-    my $text = shift;
-
-    for($text) {
-        s{ at \(eval \d+\) line \d+,?}{}g;
-        s{ <DATA> line \d+\.?}{}g;
-        s{trapped by operation mask}{call is not allowed}g;
-    }
-
-    $text;
-}
 
 __DATA__
 @@ index.html.ep
@@ -155,6 +86,13 @@ __DATA__
                                     { msg: res.stdout, className: 'stdout' },
                                     { msg: res.stderr, className: 'stderr' },
                                     { msg: res.retval, className: 'retval' }
+                                ];
+                            },
+                            error: function() {
+                                data = [
+                                    { msg: '',              className: 'stdout' },
+                                    { msg: 'request error', className: 'stderr' },
+                                    { msg: '',              className: 'retval' }
                                 ];
                             }
                         } );
