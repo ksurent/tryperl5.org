@@ -11,7 +11,7 @@ get '/' => sub {
     my $self = shift;
 
     my $cid = $self->session('cid');
-    if(not defined get_context($cid)) {
+    if(not defined $cid or not defined get_context($cid)) {
         $cid = create_UUID_as_string(UUID_V4);
         $self->session(cid => $cid);
         add_context($cid);
