@@ -1,46 +1,34 @@
 package Tryperl5::Context;
 
-use Safe;
+use Safe 2.27;
 use Modern::Perl;
 use Data::Dumper;
 use Exporter qw(import);
-use Lexical::Persistence;
 use IO::CaptureOutput qw(capture);
+use PadWalker qw(closed_over peek_sub);
 
 our @EXPORT = qw(add_context get_context remove_context safe_eval);
-
-{
-    no warnings 'redefine';
-    *Safe::reval = sub {
-        my($obj, $expr, $strict) = @_;
-        my $root = $obj->{Root};
-
-        my $evalsub = Safe::lexless_anon_sub($root, $strict, $expr);
-        return Opcode::_safe_call_sv($root, $obj->{Mask}, $evalsub);
-    };
-}
-
 
 my %contexts;
 sub add_context {
     my $id = shift;
 
-    $contexts{$id} = {
-        persist => Lexical::Persistence->new,
-        safe    => Safe->new,
-    };
-    $contexts{$id}->{safe}->permit_only(qw(
+    my $safe = Safe->new;
+    $safe->permit_only(qw(
         :base_core
         :base_mem
         :base_loop
         :base_math
         :base_orig
-        say
         print
-        require
-        caller
-        binmode
+        time
+        sort
     ));
+
+    $contexts{$id} = {
+        persist => {},
+        safe    => $safe,
+    };
 }
 
 sub get_context {
@@ -58,15 +46,19 @@ sub remove_context {
 sub safe_eval {
     my($code, $id) = @_;
 
-    my $compiled = compile($code, $id);
+    my $compiled = compile(prepare($code, $id), $id);
     if(not ref $compiled or ref $compiled ne 'CODE') {
         return prepare_output('', $compiled, '');
     }
 
+    restore($compiled, $id);
+
     local $SIG{ALRM} = sub { die };
     alarm(3);
-    my($out, $err, $ret) = execute($compiled, $id);
+    my($out, $err, $ret) = execute($compiled);
     alarm(0);
+
+    save($compiled, $id);
 
     prepare_output($out, $err, $ret);
 }
@@ -74,31 +66,50 @@ sub safe_eval {
 sub compile {
     my($code, $id) = @_;
 
-    my $context = get_context($id);
-    my $compiled = $context->{safe}->reval(prepare_code($code, $id), 1);
-    return $compiled ? $compiled : $@;
+    my $compiled = get_context($id)->{safe}->reval($code, 1);
+
+    return defined $compiled ? $compiled : $@;
+}
+
+sub prepare {
+    my($code, $id) = @_;
+
+    my $vars = join ';', map "my $_", keys %{ get_context($id)->{persist} };
+
+    qq/$vars; sub { $code }/
 }
 
 sub execute {
-    my($compiled, $id) = @_;
+    my $compiled = shift;
 
     my(@ret, $stdout, $stderr);
-    my $context = get_context($id);
-    my $persisted = $context->{persist}->wrap($compiled);
-    capture { @ret = eval { $persisted->() } } \$stdout, \$stderr;
+    capture { @ret = eval { $compiled->() } } \$stdout, \$stderr;
 
     ($stdout, $stderr, \@ret);
 }
 
-sub prepare_code {
-    my($code, $id) = @_;
+sub save {
+    my($compiled, $id) = @_;
 
-    my $context = get_context($id);
-    my $saved;# = 'use utf8;binmode STDOUT,":utf8";use feature qw(say switch state);';
-    $saved .= join '', map { "my $_;" } keys %{ $context->{persist}->get_context('_') };
-    $saved .= $code;
+    my $persist  = get_context($id)->{persist};
+    my $lexicals = get_lexicals($compiled);
 
-    qq!sub { $saved }!;
+    while(my($varname, $valref) = each %$lexicals) {
+        $persist->{$varname} = $$valref;
+    }
+}
+
+sub restore {
+    my($compiled, $id) = @_;
+
+    my $persist = get_context($id)->{persist};
+    return unless %$persist;
+    my $lexicals = get_lexicals($compiled);
+
+    for my $varname (keys %$lexicals) {
+        next unless exists $persist->{$varname};
+        ${ $lexicals->{$varname} } = $persist->{$varname};
+    }
 }
 
 sub prepare_output {
@@ -108,12 +119,20 @@ sub prepare_output {
     $ret = Data::Dumper->new([$ret], ['RETURN_VALUE'])->Dump;
 
     for($err) {
-        s{at .+? line \d+,?}{}g;
-        s{<DATA> line \d+\.?}{}g;
+        s{[.,]$}{};
+        s{at .+? line \d+}{}g;
+        s{<DATA> line \d+}{}g;
         s{trapped by operation mask}{call is not allowed}g;
     }
 
     ($out, $err, $ret);
+}
+
+sub get_lexicals {
+    my $compiled = shift;
+
+    my $closed_over = closed_over $compiled;
+    peek_sub ${ $closed_over->{'$sub'} };
 }
 
 1;
