@@ -1,5 +1,7 @@
 #!/usr/bin/env perl
 
+use lib 'mojo';
+
 use UUID::Tiny;
 use Modern::Perl;
 use Mojolicious::Lite;
