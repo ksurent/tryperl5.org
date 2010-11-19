@@ -1,7 +1,6 @@
-[submodule "jquery-console"]
-	path = jquery-console
-	url = git://github.com/chrisdone/jquery-console.git
-
 [submodule "mojo"]
 	path = mojo
 	url = git://github.com/kraih/mojo.git
+[submodule "public/jquery-console"]
+	path = public/jquery-console
+	url = git://github.com/chrisdone/jquery-console.git
