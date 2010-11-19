@@ -49,12 +49,6 @@ get '/reset' => sub {
     $self->redirect_to('index');
 };
 
-app->static(
-    MojoX::Dispatcher::Static->new(
-        prefix => '/js',
-        root   => app->home->rel_dir('jquery-console'),
-    )
-);
 app->secret('tryperl5 secret');
 app->start;
 
@@ -64,12 +58,13 @@ __DATA__
 <html>
     <head>
         <title>Try Perl 5! An interactive tutorial in your browser</title>
-        <script src="/js/jquery-1.4.2.min.js" type="text/javascript"></script>
-        <script src="/js/jquery.console.js" type="text/javascript"></script>
+        <link rel="stylesheet" type="text/css" href="style.css"/>
+        <script src="jquery-console/jquery-1.4.2.min.js" type="text/javascript"></script>
+        <script src="jquery-console/jquery.console.js" type="text/javascript"></script>
         <script type="text/javascript">
             $(document).ready( function() {
                 var console = $('<div class="console"/>');
-                $('body').append(console);
+                $('#container').append(console);
                 console.console({
                     autofocus: true,
                     promptHistory: true,
@@ -107,19 +102,10 @@ __DATA__
                 });
             });
         </script>
-        <style type="text/css">
-              div.console { font-size: 14px; }
-              div.console div.jquery-console-inner { width:900px; height:200px; background:#333; padding:0.5em; overflow:auto; }
-              div.console div.jquery-console-prompt-box { color:#fff; font-family:monospace; }
-              div.console div.jquery-console-focus span.jquery-console-cursor { background:#fefefe; color:#333; font-weight:bold; }
-              div.console div.stderr { color:#ef0505; font-family:monospace; padding:0.1em; }
-              div.console div.stdout { color:#1ad027; font-family:monospace; padding:0.1em; }
-              div.console div.retval { color:#52666f; font-family:monospace; padding:0.1em; }
-              div.console span.jquery-console-prompt-label { font-weight:bold; }
-              div.console div.jquery-console-welcome { color: #fff; }
-        </style>
     </head>
     <body>
-        <a href="/reset">Reset</a>
+       <div id="title">tryperl5.org</div>
+       <div id="container"></div>
+       <div id="author">ksurent</div>
     </body>
 </html>
